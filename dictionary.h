@@ -24,20 +24,56 @@ int dictionary_init(pdictionary dict);
 /// @brief Writes str to the specified key
 /// @param dict pointer to the dictionary_base object
 /// @param key assumed not NULL, the key we want to write to
+/// @param key_length the length of the key
 /// @param str the value we want to assign to the key
 /// @param str_len the length of the value (could contain \0, so we cannot call strlen() on it)
 /// @return zero for success, non zero otherwise
-int dictionary_write(pdictionary dict, const char* key, const char* value, size_t str_len);
+int dictionary_write(pdictionary dict, 
+    const char* key, size_t key_length,
+    const char* value, size_t str_len);
 
-#define dictionary_delete_key(dict, key) dictionary_write(dict, key, NULL, 0)
+#define dictionary_delete_key(dict, key, key_length) dictionary_write(dict, key, key_length, NULL, 0)
+
+/// @brief Appends str to the specified key, if the key is not present is created
+/// @param dict pointer to the dictionary_base object
+/// @param key assumed not NULL, the key we want to write to
+/// @param key_length the length of the key
+/// @param str the value we want to append to the key
+/// @param str_len the length of the value (could contain \0, so we cannot call strlen() on it)
+/// @return zero for success, non zero otherwise
+int dictionary_append(pdictionary dict, 
+    const char* key, size_t key_length,
+    const char* value, size_t str_len);
 
 /// @brief Reads the content of key and puts it into buffer
 /// @param dict pointer to the dictionary_base object
 /// @param key assumed not NULL, the key we want to write to
+/// @param key_length the length of the key
 /// @param buffer the buffer where the stored data will be copied
 /// @param maxsize the max length of the buffer that we can receive
 /// @return zero for success, non zero otherwise
-int dictionary_read(pdictionary dict, const char* key, char* buffer, size_t maxsize);
+int dictionary_read(pdictionary dict, 
+    const char* key, size_t key_length, 
+    char* buffer, size_t maxsize);
+
+/// @brief Reads all the key-value pairs
+/// @param dict The dictionary we want to read
+/// @param buffer the buffer where the stored data will be copied
+/// @param maxsize the max length of the buffer that we can receive
+/// @return zero for success
+int dictionary_read_all(pdictionary dict, char* buffer, size_t maxsize);
+
+/// @brief Reads the content of key and puts it into buffer
+/// @param dict pointer to the dictionary_base object
+/// @param key assumed not NULL, the key we want to write to
+/// @param key_length the length of the key
+/// @return zero for success, non zero otherwise
+int dictionary_print_key(pdictionary dict, const char* key, size_t key_length);
+
+/// @brief Reads all the key-value pairs
+/// @param dict The dictionary we want to read
+/// @return zero for success
+int dictionary_print_all(pdictionary dict);
 
 /// @brief De allocates all the keys, frees the mutex
 /// @param dict pointer to the dictionary_base object
