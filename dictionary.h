@@ -51,17 +51,17 @@ int dictionary_append(pdictionary dict,
 /// @param key_length the length of the key
 /// @param buffer the buffer where the stored data will be copied
 /// @param maxsize the max length of the buffer that we can receive
-/// @return zero for success, non zero otherwise
-int dictionary_read(pdictionary dict, 
-    const char __user *key, size_t key_length, 
-    char* buffer, size_t maxsize);
+/// @return number of bytes read, below zero for errors
+ssize_t dictionary_read(pdictionary dict, 
+    const char *key, size_t key_length, 
+    char __user* buffer, size_t maxsize);
 
 /// @brief Reads all the key-value pairs
 /// @param dict The dictionary we want to read
 /// @param buffer the buffer where the stored data will be copied
 /// @param maxsize the max length of the buffer that we can receive
-/// @return zero for success
-int dictionary_read_all(pdictionary dict, char __user *buffer, size_t maxsize);
+/// @return total number of bytes read, below zero for errors
+ssize_t dictionary_read_all(pdictionary dict, char __user *buffer, size_t maxsize);
 
 /// @brief Reads the content of key and puts it into buffer
 /// @param dict pointer to the dictionary_base object

@@ -28,22 +28,22 @@ static int misc_device_close(struct inode *inode, struct file *file)
 
 static ssize_t misc_device_read(struct file *file, char __user *buffer, size_t len, loff_t *ppos)
 {
-    int res;
+    ssize_t res;
     
-    if (buffer == NULL || len == 0)
+    if (buffer == NULL || len == 0 || ppos == NULL)
     {
         printk(KERN_ERR "misc_device_read failed because of bad output buffer.\n");
         return -EINVAL;
     }
-    
     res = dictionary_read_all(&dictionary, buffer, len);
-    if (res != 0)
+    if (res < 0)
     {
-        printk(KERN_ERR "dictionary_read_all failed with exit code of %d.\n", res);
-        return -EFAULT;
+        printk(KERN_ERR "dictionary_read_all failed.\n");
+        return res;
     }
-
-    return 0;
+    *ppos += res;
+    res = min(len, res);
+    return res;
 }
 
 static ssize_t misc_device_write(struct file *file, const char __user *buffer, size_t count, loff_t *ppos)
@@ -94,7 +94,7 @@ static int dictionary_module_init(void)
 
     res = misc_register(&dictionary_device);
 
-    printk(KERN_INFO "Misc Register returned %d\n", res);
+    printd(KERN_INFO "Misc Register returned %d\n", res);
     res = dictionary_init(&dictionary);
     if (res != 0)
     {

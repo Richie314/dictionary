@@ -253,18 +253,18 @@ int dictionary_append(pdictionary dict,
 }
 
 //Read to buffer function
-int dictionary_read(pdictionary dict, const char* key, size_t key_length, char __user *buffer, size_t maxsize)
+ssize_t dictionary_read(pdictionary dict, const char* key, size_t key_length, char __user *buffer, size_t maxsize)
 {
     struct list_head *node_ref;
     pnode node_ptr;
-    int res;
+    ssize_t res;
     size_t value_length;
 
     if (dict == NULL || buffer == NULL || maxsize == 0)
-        return 1;
+        return -EINVAL;
     if (wait_for_mutex_unlock(&dict->mutex) != 0)
     {
-        return 1;
+        return -EFAULT;
     }
     ////////////////////////////////////////
     //Mutex is locked from now on
@@ -277,11 +277,12 @@ int dictionary_read(pdictionary dict, const char* key, size_t key_length, char _
         // Code to add in the future
         //
         //
-        res = 1;
+        res = -EFAULT;
     } else {
         value_length = strlen(node_ptr->value);
+        value_length = min(maxsize, value_length);
         //copy_to_user returns the bytes that could not be copied (0 for success)
-        res = copy_to_user(buffer, node_ptr->value, min(maxsize, value_length));
+        res = value_length - copy_to_user(buffer, node_ptr->value, value_length);
     }
     //End of the read operations
     ////////////////////////////////////////
@@ -291,91 +292,92 @@ int dictionary_read(pdictionary dict, const char* key, size_t key_length, char _
 }
 
 //Read all keys to buffer function
-int dictionary_read_all(pdictionary dict, char __user *buffer, size_t maxsize)
+ssize_t dictionary_read_all(pdictionary dict, char __user *buffer, size_t maxsize)
 {
     struct list_head *pos, *q;
     pnode temp;
-    size_t index;
+    ssize_t index;
     size_t node_key_size;
     size_t node_value_size;
 
     if (dict == NULL)
     {
         printk(KERN_ERR "dictionary_read_all: dictionary was NULL!\n");
-        return 1;
+        return -EINVAL;
     }
     if (buffer == NULL)
     {
         printk(KERN_ERR "dictionary_read_all: output buffer was NULL!\n");
-        return 1;
+        return -EINVAL;
     }
     
     if (wait_for_mutex_unlock(&dict->mutex) != 0)
     {
         printk(KERN_ERR "dictionary_read_all: Couldn't unlock the mutex!\n");
-        return 1;
+        return -EFAULT;
     }
     index = 0;
     list_for_each_safe(pos, q, &dict->key_value_list)
     {
         temp = list_entry(pos, struct node, list);
-        if (temp != NULL)
+        if (temp == NULL)
         {
-            node_key_size = strlen(temp->key);
-            node_value_size = strlen(temp->value);
-            if (index + node_key_size + node_value_size + 7 < maxsize)
-            {
-                //Can't use copy_to_user on literals
-                if (memcpy(&buffer[index], "<", 1) != &buffer[index])
-                {
-                    printk(KERN_ERR "Couldn't copy char '<' to output buffer\n");
-                    continue;
-                }
-                index++;
-
-                //We have to use copy_to_user for the key
-                if (copy_to_user(&buffer[index], temp->key, node_key_size) != 0)
-                {
-                    index--;
-                    printk(KERN_ERR "Couldn't copy key  \"%s\" (%d) to output buffer\n", temp->key, (int)node_key_size);
-                    continue;
-                }
-                index += node_key_size;
-                
-                //Can't use copy_to_user on literals
-                if (memcpy(&buffer[index], ">: \"", 4) != &buffer[index])
-                {
-                    index -= node_key_size + 1;
-                    continue;
-                }
-                index += 4;
-
-                //We have to use copy_to_user for the content
-                if (copy_to_user(&buffer[index], temp->value, node_value_size) != 0)
-                {
-                    index -= node_key_size + 5;
-                    printk(KERN_ERR "Couldn't copy value \"%s\" (%d) to output buffer\n", temp->value, (int)node_value_size);
-                    continue;
-                }
-                index += node_value_size;
-
-                //Can't use copy_to_user on literals
-                if (memcpy(&buffer[index], "\"\n", 2) != &buffer[index])
-                {
-                    index -= node_key_size + 5 + node_value_size;
-                    continue;
-                }
-                index += 2;
-
-                //printk(KERN_DEBUG "Copied key value <%s> to buffer\n", temp->key);
-            } else {
-                printk(KERN_ERR "Not enough space on output buffer of size %d, tried to copy %d bytes\n", (int)maxsize, (int)(node_key_size + node_value_size));
-            }
+            printk(KERN_ALERT "NULL value inside list detected\n");  
+            continue;
         }
-    }
-    
+        node_key_size = strlen(temp->key);
+        node_value_size = strlen(temp->value);
+        if (index + node_key_size + node_value_size + 7UL >= maxsize)
+        {
+            printk(KERN_ERR "Not enough space on output buffer of size %d, tried to copy %d bytes\n", (int)maxsize, (int)(node_key_size + node_value_size));
+            break;
+        }
+        //Can't use copy_to_user on literals
+        if (memcpy(&buffer[index], "<", 1UL) != &buffer[index])
+        {
+            printk(KERN_ERR "Couldn't copy char '<' to output buffer\n");
+            break;
+        }
+        index++;
+
+        //We have to use copy_to_user for the key
+        if (copy_to_user(&buffer[index], temp->key, node_key_size) != 0)
+        {
+            index--;
+            printk(KERN_ERR "Couldn't copy key  \"%s\" (%d) to output buffer\n", temp->key, (int)node_key_size);
+            break;
+        }
+        index += node_key_size;
+            
+        //Can't use copy_to_user on literals
+        if (memcpy(&buffer[index], ">: \"", 4UL) != &buffer[index])
+        {
+            index -= node_key_size + 1;
+            break;
+        }
+        index += 4;
+
+        //We have to use copy_to_user for the content
+        if (copy_to_user(&buffer[index], temp->value, node_value_size) != 0)
+        {
+            index -= node_key_size + 5;
+            printk(KERN_ERR "Couldn't copy value \"%s\" (%d) to output buffer\n", temp->value, (int)node_value_size);
+            break;
+        }
+        index += node_value_size;
+
+        //Can't use copy_to_user on literals
+        if (memcpy(&buffer[index], "\"\n", 2UL) != &buffer[index])
+        {
+            index -= node_key_size + 5 + node_value_size;
+            break;
+        }
+        index += 2;
+
+        //printk(KERN_DEBUG "Copied key value <%s> to buffer\n", temp->key);
+    }    
     mutex_unlock(&dict->mutex);
-    return 0;
+    return index;
 }
 
 //Print key function
