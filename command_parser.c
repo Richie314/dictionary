@@ -1,6 +1,6 @@
-#include "command_parser.h"
+#include "module.h"
 
-static ssize_t next_command_start(const char* commands, size_t length, size_t curr_index)
+static ssize_t next_command_start(const __user char* commands, size_t length, size_t curr_index)
 {
     for ( ; curr_index < length && commands[curr_index] != COMMAND_SEPARATOR; curr_index++)
     {
@@ -14,7 +14,7 @@ static ssize_t next_command_start(const char* commands, size_t length, size_t cu
     return (-1);
 }
 
-typedef int(*command_function)(pdictionary, const char*, size_t);
+typedef int(*command_function)(pdictionary, const char* __user, size_t);
 #define skip_spaces(command, i, length) \
     while (i < length && (command[i] == ' ' || command[i] == '\t')) \
     { \
@@ -22,136 +22,142 @@ typedef int(*command_function)(pdictionary, const char*, size_t);
     } \
     if (i == length) \
         return
-static bool parse_key_and_value(const char* str, size_t length, size_t indices[4])
+struct indices_t
+{
+    size_t key_start, key_length, value_start, value_length;
+};
+static bool parse_key_and_value(const char* __user str, size_t length, struct indices_t* indices)
 {
     size_t index = 1;
 
-    if (str[0] != '\"' || length == 0)
+    printd(KERN_DEBUG "Parsing key and value of \"%s\" (%d)\n", str, (int)length);
+    memset(indices, 0, sizeof(struct indices_t));
+    //search for key
+    if (str[0] != '<' || length == 0)
+    {
+        printd(KERN_DEBUG "Bad first character or length == 0\n");
         return false;
-    indices[0] = 1;
-    while (index < length && str[index] != '\"')
+    }
+    indices->key_start = 1;
+    while (index < length && str[index] != '\0' && str[index] != '>')
     {
         ++index;
     }
-    if (index == length)
-        return false;
-    indices[1] = index - 1;
-    ++index;
-    skip_spaces(str, index, length) false;
-    if (str[index] == '\"')
+    if (index == length || str[index] == '\0')
     {
-        //value is wrapped between ""
-        indices[2] = ++index;
-        while (index < length && str[index] != '\"')
-        {
-            ++index;
-        }
-        if (index == length)
-            return false;
-        indices[3] = index - indices[2];
-    } else {
-        indices[2] = index;
-        indices[3] = length - index;
+        printd(KERN_DEBUG "Closing '>' of key not found\n");
+        return false;
     }
+    indices->key_length = index - 1;
+    ++index;
+
+    //search for value (starts with first non space character after the key)
+    skip_spaces(str, index, length) false;
+    indices->value_start = index;
+    indices->value_length = length - index;
     return true;
 }
-static bool parse_key(const char* str, size_t length, size_t indices[2])
+static bool parse_key(const char* __user str, size_t length, struct indices_t* indices)
 {
     size_t index = 1;
 
     if (length == 0)
         return false;
-    if (str[0] == '\"')
+    memset(indices, 0, sizeof(struct indices_t));
+    if (str[0] == '<')
     {
-        indices[0] = 1;
-        while (index < length && str[index] != '\"')
+        indices->key_start = index++;
+        while (index < length && str[index] != '\0' && str[index] != '>')
         {
             ++index;
         }
         if (index == length)
             return false;
-        indices[1] = index - 1;
+        indices->key_length = index - 1;
     } else {
-        indices[0] = 0;
-        indices[1] = length;
+        indices->key_start = 0;
+        index = strlen(str);
+        indices->key_length = min(length, index);
     }
     
     return true;
 }
 
-static int function_write(pdictionary dict, const char* keyAndValue, size_t length)
+static int function_write(pdictionary dict, const char* __user keyAndValue, size_t length)
 {
-    size_t indices[4] = { 0 };
+    struct indices_t indices;
 
-    if (!parse_key_and_value(keyAndValue, length, indices))
+    if (!parse_key_and_value(keyAndValue, length, &indices))
     {
         return (-1);//Bad format
     }
-    printk(KERN_DEBUG "Executing write with values --%s--\n%s\n%s\n%d, %d, %d, %d\n", 
+    printd(KERN_DEBUG "Executing write with params \"%s\"\n\tfirst %d of \"%s\"\n\tfirst %d of \"%s\"\n", 
         keyAndValue, 
-        &keyAndValue[indices[0]], 
-        &keyAndValue[indices[2]], 
-        (int)indices[0], 
-        (int)indices[1], 
-        (int)indices[2], 
-        (int)indices[3]);
-    return dictionary_write(dict, 
-        &keyAndValue[indices[0]], indices[1], 
-        &keyAndValue[indices[2]], indices[3]);
-}
-static int function_append(pdictionary dict, const char* keyAndValue, size_t length)
-{
-    size_t indices[4] = { 0 };
-
-    if (!parse_key_and_value(keyAndValue, length, indices))
-    {
-        return (-1);//Bad format
-    }
-    printk(KERN_DEBUG "Executing append with values --%s--\n%s\n%s\n%d, %d, %d, %d\n", 
-        keyAndValue, 
-        &keyAndValue[indices[0]], 
-        &keyAndValue[indices[2]], 
-        (int)indices[0], 
-        (int)indices[1], 
-        (int)indices[2], 
-        (int)indices[3]);
+        (int)(indices.key_length),  
+        &keyAndValue[indices.key_start], 
+        (int)(indices.value_length),
+        &keyAndValue[indices.value_start]);
     return dictionary_append(dict, 
-        &keyAndValue[indices[0]], indices[1], 
-        &keyAndValue[indices[2]], indices[3]);
+        &keyAndValue[indices.key_start], indices.key_length, 
+        &keyAndValue[indices.value_start], indices.value_length);
 }
-static int function_print(pdictionary dict, const char* keyAndValue, size_t length)
+static int function_append(pdictionary dict, const char __user* keyAndValue, size_t length)
 {
-    size_t indices[2] = { 0 };
+    struct indices_t indices;
 
-    if (!parse_key(keyAndValue, length, indices))
+    if (!parse_key_and_value(keyAndValue, length, &indices))
     {
         return (-1);//Bad format
     }
-    return dictionary_print_key(dict, &keyAndValue[indices[0]], indices[1]);
+    printd(KERN_DEBUG "Executing append with params \"%s\"\n first %d of \"%s\"\n first %d of \"%s\"\n", 
+        keyAndValue, 
+        (int)(indices.key_length),  
+        &keyAndValue[indices.key_start], 
+        (int)(indices.value_length),
+        &keyAndValue[indices.value_start]);
+    return dictionary_append(dict, 
+        &keyAndValue[indices.key_start], indices.key_length, 
+        &keyAndValue[indices.value_start], indices.value_length);
 }
-static int function_delete(pdictionary dict, const char* keyAndValue, size_t length)
+static int function_print(pdictionary dict, const char __user* keyAndValue, size_t length)
 {
-    size_t indices[2] = { 0 };
+    struct indices_t indices;
 
-    if (!parse_key(keyAndValue, length, indices))
+    if (!parse_key(keyAndValue, length, &indices))
     {
         return (-1);//Bad format
     }
-    return dictionary_delete_key(dict, &keyAndValue[indices[0]], indices[1]);
+    return dictionary_print_key(dict, &keyAndValue[indices.key_start], indices.key_length);
 }
-static int function_delete_all(pdictionary dict, const char* keyAndValue, size_t length)
+static int function_delete(pdictionary dict, const char __user *keyAndValue, size_t length)
 {
-    return dictionary_free(dict);
+    struct indices_t indices;
+
+    if (!parse_key(keyAndValue, length, &indices))
+    {
+        return (-1);//Bad format
+    }
+    return dictionary_delete_key(dict, &keyAndValue[indices.key_start], indices.key_length);
 }
-static int function_count(pdictionary dict, const char* keyAndValue, size_t length)
+static int function_delete_all(pdictionary dict, const char*, size_t)
+{
+    int res;
+
+    printd(KERN_DEBUG "delete all\n");
+    res = dictionary_free(dict);
+    return res;
+}
+static int function_count(pdictionary dict, const char __user*, size_t)
 {
     int count;
 
     count = (int)dictionary_count(dict);
-    printk(KERN_DEBUG "Keys in dictionary: %d\n", count);
-    return count;
+    printd(KERN_DEBUG "Keys in dictionary: %d\n", count);
+    if (count == 0)
+        return 1;
+    return 0;
 }
-static int function_is_empty(pdictionary dict, const char* keyAndValue, size_t length)
+static int function_is_empty(pdictionary dict, const char __user*, size_t)
 {
     if (dictionary_empty(dict))
     {
@@ -162,30 +168,38 @@ static int function_is_empty(pdictionary dict, const char* keyAndValue, size_t l
     return 0;
 }
 
-static void execute_single_command(pdictionary dict, const char* command, size_t length)
+static bool execute_single_command(pdictionary dict, const char* __user command, size_t length)
 {
     size_t i = 0;
+    bool need_for_parameters = false;
     command_function f = NULL;
 
-    skip_spaces(command, i, length);
+    skip_spaces(command, i, length) false;
     //Skipped start spaces
     if (command[i] != '-')
-        return;//Bad format
+        return false;//Bad format
     ++i;
+    if (i == length)
+        return false;//Bad format
+    printd(KERN_DEBUG "character of command: '%c'\n", command[i]);
     switch (command[i])
     {
         case COMMAND_WRITE:
             f = function_write;
+            need_for_parameters = true;
             break;
         case COMMAND_APPEND:
             f = function_append;
+            need_for_parameters = true;
             break;
         case COMMAND_READ:
         case COMMAND_PRINT:
             f = function_print;
+            need_for_parameters = true;
             break;
         case COMMAND_DELETE:
             f = function_delete;
+            need_for_parameters = true;
             break;
         case COMMAND_DELETE_ALL:
             f = function_delete_all;
@@ -197,16 +211,24 @@ static void execute_single_command(pdictionary dict, const char* command, size_t
             f = function_is_empty;
             break;
         default: 
-            printk(KERN_ERR "Unrecognized command character '%c', from: --%s--\n", command[i], command);
-            return;
+            printk(KERN_ERR "Unrecognized command character '%c', from: \"%s\"\n", command[i], command);
+            return false;
     }
-    ++i;
-    skip_spaces(command, i, length);
-    f(dict, &command[i], length - i);
+    if (need_for_parameters && i + 1 < length)
+    {
+        ++i;
+        skip_spaces(command, i, length) false;
+    }
+    if (f(dict, &command[i], length - i) != 0)
+    {
+        printk(KERN_ERR "Command reported error while executing.\n");
+        return false;
+    }
+    return true;
 }
 
 
-int parse_command(pdictionary dict, const char* commands, size_t length)
+int parse_command(pdictionary dict, const char* __user commands, size_t length)
 {
     ssize_t prev_command = 0, next_command = 0;
     int count = 0;
@@ -214,15 +236,16 @@ int parse_command(pdictionary dict, const char* commands, size_t length)
     do
     {
         next_command = next_command_start(commands, length, next_command);
-        ++count;
         if (next_command < 0)
         {
             //Last command
-            execute_single_command(dict, &commands[prev_command], length - prev_command);
+            if (execute_single_command(dict, &commands[prev_command], length - prev_command))
+                ++count;
             return count;
         } else {
             //There are other commands next
-            execute_single_command(dict, &commands[prev_command], next_command - prev_command);
+            if (execute_single_command(dict, &commands[prev_command], next_command - prev_command))
+                ++count;
             prev_command = next_command + 1;//+1 to skip the COMMAND_SEPARATOR character
         }
 

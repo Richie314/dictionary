@@ -11,14 +11,16 @@ static struct list_head* dictionary_find_node(pdictionary dict,
 {
     struct list_head *pos, *q;
     
-    if (key_length == 0)
-    {
-        key_length = strlen(key);
-    }
+    //if (key_length == 0)
+    //{
+        //key_length = strlen(key);
+    //}
     list_for_each_safe(pos, q, &dict->key_value_list)
     {
         *node_obj = list_entry(pos, struct node, list);
-        if (strncmp((*node_obj)->key, key, key_length) == 0)
+        //if (strlen((*node_obj)->key) != key_length)
+        //    continue;
+        if (strcmp((*node_obj)->key, key) == 0)
         {
             return pos;
         }
@@ -88,17 +90,17 @@ static int update_node(pnode node, const char* str, size_t length)
         node->value = krealloc(node->value, length, GFP_USER)
     }
     */
-    //krealloc behaves as the code above if node->value is NULL
+    //if node->value is NULL krealloc behaves the same as kmalloc(length + 1, GFP_USER)
     node->value = (char*)krealloc(node->value, length + 1, GFP_USER);
     if (node->value == NULL)
         return 1;
-    memset(node->value, 0, length + 1);
+    memset(node->value, 0, ksize(node->value));//The allocated block could be greater than what was requested
     res = copy_from_user(node->value, str, length);
     if (res != 0)
     {
         if (res < length)
         {
-            //copy_from user failed
+            //copy_from_user failed
             kfree(node->value);
             node->value = NULL;
             return res;
@@ -148,11 +150,11 @@ static int append_node(pnode node, const char* str, size_t length)
     return res;
 }
 
-//
-//
-//      Header functions body
-//
-//
+/*********************************************/
+/*                                           */
+/*          Header functions body            */
+/*                                           */
+/*********************************************/
 
 //Init functon: the first one to be called
 int dictionary_init(pdictionary dict)
@@ -251,12 +253,12 @@ int dictionary_append(pdictionary dict,
 }
 
 //Read to buffer function
-int dictionary_read(pdictionary dict, const char* key, size_t key_length, char* buffer, size_t maxsize)
+int dictionary_read(pdictionary dict, const char* key, size_t key_length, char __user *buffer, size_t maxsize)
 {
     struct list_head *node_ref;
     pnode node_ptr;
     int res;
-    size_t block_size;
+    size_t value_length;
 
     if (dict == NULL || buffer == NULL || maxsize == 0)
         return 1;
@@ -277,9 +279,9 @@ int dictionary_read(pdictionary dict, const char* key, size_t key_length, char* 
         //
         res = 1;
     } else {
-        block_size = ksize(node_ptr->value);
+        value_length = strlen(node_ptr->value);
         //copy_to_user returns the bytes that could not be copied (0 for success)
-        res = copy_to_user(buffer, node_ptr->value, min(maxsize, block_size));
+        res = copy_to_user(buffer, node_ptr->value, min(maxsize, value_length));
     }
     //End of the read operations
     ////////////////////////////////////////
@@ -289,12 +291,13 @@ int dictionary_read(pdictionary dict, const char* key, size_t key_length, char* 
 }
 
 //Read all keys to buffer function
-int dictionary_read_all(pdictionary dict, char* buffer, size_t maxsize)
+int dictionary_read_all(pdictionary dict, char __user *buffer, size_t maxsize)
 {
     struct list_head *pos, *q;
     pnode temp;
     size_t index;
-    size_t node_size;
+    size_t node_key_size;
+    size_t node_value_size;
 
     if (dict == NULL)
     {
@@ -306,24 +309,67 @@ int dictionary_read_all(pdictionary dict, char* buffer, size_t maxsize)
         printk(KERN_ERR "dictionary_read_all: output buffer was NULL!\n");
         return 1;
     }
-    sprintf(buffer, "Starting to print key-value paiers, max output length set to %d\n", (int)maxsize);
-    index = 65;
+    
     if (wait_for_mutex_unlock(&dict->mutex) != 0)
     {
         printk(KERN_ERR "dictionary_read_all: Couldn't unlock the mutex!\n");
         return 1;
     }
-    
+    index = 0;
     list_for_each_safe(pos, q, &dict->key_value_list)
     {
         temp = list_entry(pos, struct node, list);
         if (temp != NULL)
         {
-            node_size = ksize(temp->key) + ksize(temp->value) + 7;
-            if (index + node_size < maxsize)
+            node_key_size = strlen(temp->key);
+            node_value_size = strlen(temp->value);
+            if (index + node_key_size + node_value_size + 7 < maxsize)
             {
-                sprintf(&buffer[index], "\"%s\": \"%s\"\n", temp->key, temp->value);
-                index += node_size;
+                //Can't use copy_to_user on literals
+                if (memcpy(&buffer[index], "<", 1) != &buffer[index])
+                {
+                    printk(KERN_ERR "Couldn't copy char '<' to output buffer\n");
+                    continue;
+                }
+                index++;
+
+                //We have to use copy_to_user for the key
+                if (copy_to_user(&buffer[index], temp->key, node_key_size) != 0)
+                {
+                    index--;
+                    printk(KERN_ERR "Couldn't copy key  \"%s\" (%d) to output buffer\n", temp->key, (int)node_key_size);
+                    continue;
+                }
+                index += node_key_size;
+                
+                //Can't use copy_to_user on literals
+                if (memcpy(&buffer[index], ">: \"", 4) != &buffer[index])
+                {
+                    index -= node_key_size + 1;
+                    continue;
+                }
+                index += 4;
+
+                //We have to use copy_to_user for the content
+                if (copy_to_user(&buffer[index], temp->value, node_value_size) != 0)
+                {
+                    index -= node_key_size + 5;
+                    printk(KERN_ERR "Couldn't copy value \"%s\" (%d) to output buffer\n", temp->value, (int)node_value_size);
+                    continue;
+                }
+                index += node_value_size;
+
+                //Can't use copy_to_user on literals
+                if (memcpy(&buffer[index], "\"\n", 2) != &buffer[index])
+                {
+                    index -= node_key_size + 5 + node_value_size;
+                    continue;
+                }
+                index += 2;
+
+                //printk(KERN_DEBUG "Copied key value <%s> to buffer\n", temp->key);
+            } else {
+                printk(KERN_ERR "Not enough space on output buffer of size %d, tried to copy %d bytes\n", (int)maxsize, (int)(node_key_size + node_value_size));
             }
         }
     }
@@ -384,7 +430,7 @@ int dictionary_print_all(pdictionary dict)
         temp = list_entry(pos, struct node, list);
         if (temp != NULL)
         {
-            printk(KERN_DEBUG "\"%s\": \"%s\"\n", temp->key, temp->value);
+            printk(KERN_DEBUG "\t\"%s\": \"%s\"\n", temp->key, temp->value);
         }
     }
     
@@ -420,6 +466,7 @@ int dictionary_free(pdictionary dict)
 size_t dictionary_count(pdictionary dict)
 {
     struct list_head *pos, *q;
+    pnode temp;
     size_t count;
 
     if (dict == NULL)
@@ -431,7 +478,9 @@ size_t dictionary_count(pdictionary dict)
     
     list_for_each_safe(pos, q, &dict->key_value_list)
     {
-        ++count;
+        temp = list_entry(pos, struct node, list);
+        if (temp != NULL)
+            ++count;
     }
 
     mutex_unlock(&dict->mutex);

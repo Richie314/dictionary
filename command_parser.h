@@ -6,7 +6,7 @@
 #define COMMAND_SEPARATOR '|'
 #define COMMAND_WRITE 'w'
 #define COMMAND_DELETE 'd'
-#define COMMAND_DELETE_ALL 'D'
+#define COMMAND_DELETE_ALL 'f'
 #define COMMAND_READ 'r'
 #define COMMAND_PRINT 'p'
 #define COMMAND_APPEND 'a'
@@ -18,7 +18,7 @@
 /// @param commands the string containing the commands
 /// @param length length of the string containing the commands
 /// @returns number of commands executed
-int parse_command(pdictionary dict, const char* commands, size_t length);
+int parse_command(pdictionary dict, const char* __user commands, size_t length);
 
 #define test_command(dict, commands) parse_command(dict, commands, strlen(commands))
 

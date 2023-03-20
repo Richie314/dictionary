@@ -5,12 +5,13 @@
 #include <linux/miscdevice.h>
 #include <linux/poll.h>
 #include <linux/slab.h>
-#include "command_parser.h"
+#include "module.h"
 
 MODULE_AUTHOR("Riccardo Ciucci");
 MODULE_DESCRIPTION("Implementation of static dictionary controlled by a device file");
 MODULE_LICENSE("GPL");
 MODULE_VERSION("1.0");
+bool debug = false;
 #define DEVICE_FILE_NAME "dictionary"
 
 static dictionary_wrapper dictionary;
@@ -32,10 +33,9 @@ static ssize_t misc_device_read(struct file *file, char __user *buffer, size_t l
     if (buffer == NULL || len == 0)
     {
         printk(KERN_ERR "misc_device_read failed because of bad output buffer.\n");
-        return -EFAULT;
+        return -EINVAL;
     }
-    printk(KERN_DEBUG "len: %d\n", (int)len);
-    dictionary_print_all(&dictionary);
+    
     res = dictionary_read_all(&dictionary, buffer, len);
     if (res != 0)
     {
@@ -43,7 +43,7 @@ static ssize_t misc_device_read(struct file *file, char __user *buffer, size_t l
         return -EFAULT;
     }
 
-    return res;
+    return 0;
 }
 
 static ssize_t misc_device_write(struct file *file, const char __user *buffer, size_t count, loff_t *ppos)
@@ -76,14 +76,15 @@ static struct file_operations dictionary_fops = {
     .read =         misc_device_read,
     .open =         misc_device_open,
     .release =      misc_device_close,
-    .write =        misc_device_write
+    .write =        misc_device_write,
+    .llseek         = no_llseek
 };
 
 static struct miscdevice dictionary_device = {
     MISC_DYNAMIC_MINOR, DEVICE_FILE_NAME, &dictionary_fops
 };
 
-#define d_write(key, str) \
+#define d_write(key, str, res) \
     res = dictionary_write(&dictionary, key, strlen(key), str, strlen(str)); \
     if (res != 0) \
         printk(KERN_ERR "dictionary_write(\"%s\", \"%s\", %d) failed with code %d\n", key, str, (int)strlen(str), res)
@@ -101,13 +102,9 @@ static int dictionary_module_init(void)
         return 0;
     }
     
-    d_write("Chiave 1", "Hello, World!aaaaaaaaaaaaaaaaaaaaaa");
-    d_write("Chiave 2", "Hello There!");
-    d_write("Chiave 3", "General kenobi!");
-    d_write("Chiave 4", "You are a bold one!");
-    d_write("Chiave 4", "Did you ever hear the tragedy of Darth Plagueis The Wise?");
-    test_command(&dictionary, "-w \"Chiave 2\" Ciao ciao");
-    test_command(&dictionary, "-a \"Chiave 1\" \"mondo\"");
+    d_write("Chiave 4", "Did you ever hear the tragedy of Darth Plagueis The Wise?", res);
+    test_command(&dictionary, "-w <Chiave 2> Ciao ciao");
+    test_command(&dictionary, "-a <Chiave 1>\t mondo");
     return 0;
 }
 
@@ -127,3 +124,4 @@ static void dictionary_module_exit(void)
 
 module_init(dictionary_module_init);
 module_exit(dictionary_module_exit);
+module_param(debug, bool, 0);
