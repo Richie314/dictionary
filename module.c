@@ -7,7 +7,7 @@
 #include <linux/slab.h>
 #include "module.h"
 
-MODULE_AUTHOR("Riccardo Ciucci");
+MODULE_AUTHOR("Riccardo Ciucci <riccardo@richie314.it>");
 MODULE_DESCRIPTION("Implementation of static dictionary controlled by a device file");
 MODULE_LICENSE("GPL");
 MODULE_VERSION("1.0");
@@ -18,11 +18,13 @@ static dictionary_wrapper dictionary;
 
 static int misc_device_open(struct inode *inode, struct file *file)
 {
+    printd("misc device (" DEVICE_FILE_NAME ") file opened.\n");
     return 0;
 }
 
 static int misc_device_close(struct inode *inode, struct file *file)
 {
+    printd("misc device (" DEVICE_FILE_NAME ") file closed.\n");
     return 0;
 }
 
@@ -35,14 +37,17 @@ static ssize_t misc_device_read(struct file *file, char __user *buffer, size_t l
         printk(KERN_ERR "misc_device_read failed because of bad output buffer.\n");
         return -EINVAL;
     }
-    res = dictionary_read_all(&dictionary, buffer, len);
+    if (*ppos > 0)
+    {
+        return 0;
+    }
+    res = dictionary_read_all(&dictionary, buffer, len, ppos);
     if (res < 0)
     {
         printk(KERN_ERR "dictionary_read_all failed.\n");
         return res;
     }
-    *ppos += res;
-    res = min(len, res);
+    printd("Bytes read: %d\n", (int)res);
     return res;
 }
 
@@ -94,7 +99,7 @@ static int dictionary_module_init(void)
 
     res = misc_register(&dictionary_device);
 
-    printd(KERN_INFO "Misc Register returned %d\n", res);
+    printd("Misc Register returned %d\n", res);
     res = dictionary_init(&dictionary);
     if (res != 0)
     {
@@ -120,6 +125,7 @@ static void dictionary_module_exit(void)
             "This could mean that the mutex was locked and it was impossible to unlock!\n", res);
     }
     misc_deregister(&dictionary_device);
+    printd("Module " DEVICE_FILE_NAME " removed.\n");
 }
 
 module_init(dictionary_module_init);
