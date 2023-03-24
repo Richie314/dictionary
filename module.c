@@ -5,118 +5,112 @@
 #include <linux/miscdevice.h>
 #include <linux/poll.h>
 #include <linux/slab.h>
-#include "dictionary.h"
+#include "module.h"
 
-MODULE_AUTHOR("Riccardo Ciucci");
+MODULE_AUTHOR("Riccardo Ciucci <riccardo@richie314.it>");
 MODULE_DESCRIPTION("Implementation of static dictionary controlled by a device file");
 MODULE_LICENSE("GPL");
 MODULE_VERSION("1.0");
+bool debug = false;
+#define DEVICE_FILE_NAME "dictionary"
 
 static dictionary_wrapper dictionary;
 
-static int my_open(struct inode *inode, struct file *file)
+static int misc_device_open(struct inode *inode, struct file *file)
 {
+    printd("misc device (" DEVICE_FILE_NAME ") file opened.\n");
     return 0;
 }
 
-static int my_close(struct inode *inode, struct file *file)
+static int misc_device_close(struct inode *inode, struct file *file)
 {
+    printd("misc device (" DEVICE_FILE_NAME ") file closed.\n");
     return 0;
 }
 
-ssize_t my_read(struct file *file, char __user *buf, size_t len, loff_t *ppos)
+static ssize_t misc_device_read(struct file *file, char __user *buffer, size_t len, loff_t *ppos)
 {
-    int res;
-    const char* key;
-
-    key = (const char*)file->f_path.dentry->d_name.name;
-    if (key == NULL)
+    ssize_t res;
+    
+    if (buffer == NULL || len == 0 || ppos == NULL)
     {
-        printk(KERN_ERR "Invalid call! could not retrieve the key from the file name.\n");
-        return -EFAULT;
+        printk(KERN_ERR "misc_device_read failed because of bad output buffer.\n");
+        return -EINVAL;
     }
-    res = dictionary_read(&dictionary, key, buf, len);
-    if (res)
+    if (*ppos > 0)
     {
-        printk(KERN_ERR "dictionary_read failed with exit code of %d.\n", res);
-        if (res == 1)
-        {
-            printk(
-                KERN_DEBUG 
-                "\tThis value could mean that the key \"%s\" was not found and was impossible to wait for its creation.\n"
-                "\tAnother possibility is that an invalid buffer was given.\n", key);
-        } else {
-            printk(
-                KERN_DEBUG 
-                "\tThis value could mean that %u bytes couldn't be copied from the node to the buffer.\n", (unsigned int)res);
-        }
-        return -EFAULT;
+        return 0;
     }
-
+    res = dictionary_read_all(&dictionary, buffer, len, ppos);
+    if (res < 0)
+    {
+        printk(KERN_ERR "dictionary_read_all failed.\n");
+        return res;
+    }
+    printd("Bytes read: %d\n", (int)res);
     return res;
 }
 
-static ssize_t my_write(struct file *file, const char __user *buf, size_t count, loff_t *ppos)
+static ssize_t misc_device_write(struct file *file, const char __user *buffer, size_t count, loff_t *ppos)
 {
-    int err;
-    const char* key;
-
-    key = (const char*)file->f_path.dentry->d_name.name;
-    if (key == NULL)
-    {
-        printk(KERN_ERR "Invalid call! could not retrieve the key from the file name.\n");
-        return -EFAULT;
-    }
+    int res;
     
-    //printk(KERN_DEBUG "my_write(%p, \"%s\", %zu, %p)", (void*)file, buf, count, (void*)ppos);
-    if (buf != NULL && count > 0)
+    if (buffer == NULL || count == 0)
     {
-        err = dictionary_write(&dictionary, key, buf, count);
-    } else {
-        err = dictionary_delete_key(&dictionary, key);
-    }
+        printk(KERN_ERR "misc_device_write failed because of NULL input.\n");
+        return -EFAULT;
+    } 
+    res = parse_command(&dictionary, buffer, count);
 
-    if (err != 0)
+    if (res == 0)
     {
-        printk(KERN_ERR "dictionary_write failed with exit code of %d.\n", err);
-        if (err == 1)
-        {
-            printk(KERN_DEBUG "This value could mean that krealloc failed.\n");
-        } else {
-            printk(KERN_DEBUG "This value could mean that copy_from_user couldn't copy %u bytes.\n", (unsigned int)err);
-        }
+        printk(KERN_ALERT "No command executed.\n");
         return -EFAULT;
     }
-
+    if (res < 0)
+    {
+        printk(KERN_ERR "Internal error of code %d.\n", res);
+        return -EFAULT;
+    }
+    printk(KERN_DEBUG "Executed %d commands.\n", res);
     return count;
 }
 
 static struct file_operations dictionary_fops = {
     .owner =        THIS_MODULE,
-    .read =         my_read,
-    .open =         my_open,
-    .release =      my_close,
-    .write =        my_write,
+    .read =         misc_device_read,
+    .open =         misc_device_open,
+    .release =      misc_device_close,
+    .write =        misc_device_write,
+    .llseek         = no_llseek
 };
 
-static struct miscdevice test_device = {
-    MISC_DYNAMIC_MINOR, "dictionary", &dictionary_fops
+static struct miscdevice dictionary_device = {
+    MISC_DYNAMIC_MINOR, DEVICE_FILE_NAME, &dictionary_fops
 };
 
-
+#define d_write(key, str, res) \
+    res = dictionary_write(&dictionary, key, strlen(key), str, strlen(str)); \
+    if (res != 0) \
+        printk(KERN_ERR "dictionary_write(\"%s\", \"%s\", %d) failed with code %d\n", key, str, (int)strlen(str), res)
 static int dictionary_module_init(void)
 {
     int res;
 
-    res = misc_register(&test_device);
+    res = misc_register(&dictionary_device);
 
-    printk(KERN_INFO "Misc Register returned %d\n", res);
+    printd("Misc Register returned %d\n", res);
     res = dictionary_init(&dictionary);
-    if (res == 0)
-        printk(KERN_INFO "dictionary_init succeded!\n");
-    else
+    if (res != 0)
+    {
         printk(KERN_ALERT "dictionary_init failed!\n");
-  return 0;
+        return 0;
+    }
+    
+    d_write("Chiave 4", "Did you ever hear the tragedy of Darth Plagueis The Wise?", res);
+    test_command(&dictionary, "-w <Chiave 2> Ciao ciao");
+    test_command(&dictionary, "-a <Chiave 1>\t mondo");
+    return 0;
 }
 
 static void dictionary_module_exit(void)
@@ -127,11 +121,13 @@ static void dictionary_module_exit(void)
     if (res != 0)
     {
         printk(KERN_ALERT 
-            "dictionry_free failed with exit code of %d.\n"
+            "dictionary_free failed with exit code of %d.\n"
             "This could mean that the mutex was locked and it was impossible to unlock!\n", res);
     }
-    misc_deregister(&test_device);
+    misc_deregister(&dictionary_device);
+    printd("Module " DEVICE_FILE_NAME " removed.\n");
 }
 
 module_init(dictionary_module_init);
 module_exit(dictionary_module_exit);
+module_param(debug, bool, 0);
