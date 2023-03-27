@@ -7,7 +7,7 @@ A read on the device results in a read of all key-value pairs present at that ti
 
 A Through a write operation is possible to send commands to print, delete write to and append to keys.
 
-The `help command (_-h_)` prints all the commands syntax in a detailed way. 
+The _`help command (-h)`_ prints all the commands syntax in a detailed way. 
 
 Read (print) commands that want to read a non existing key are put in a waitqueue until the wanted key is created.
 
@@ -17,4 +17,8 @@ The module has three params
 - **timeout**: if set to non zero (zero is the default value) puts a limit to the amount of time a read/print task can be sleeping waiting for one key. If set to zero tasks will wait until they receive an interrupt signal that kills them or the key is created and the value is printed
 
 How to load the module:
-Just write `_sudo /sbin/insmod modules/dictionary.ko debug=y tests=y timeout=20000_` in your terminal. This example will load the module and tell it to print debug info, execute tests on start and put a time limit of 20 seconds to the waiting tasks
+Just write _`sudo /sbin/insmod modules/dictionary.ko debug=y tests=y timeout=20000`_ in your terminal. This example will load the module and tell it to print debug info, execute tests on start and put a time limit of 20 seconds to the waiting tasks.
+
+An exmple of command to send to the dictionary is: _`echo -n > dev/dictionary "-w <Key> Value"`_. This command tells the module to write _`Value`_ to the key _`Key`_
+
+A complete cheatsheet is printed by the module with the command _`echo -n > dictionary "-h"`_ 
