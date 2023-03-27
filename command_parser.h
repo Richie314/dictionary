@@ -26,9 +26,8 @@
 /// @param dict pointer to the dictionary object 
 /// @param commands the string containing the commands
 /// @param length length of the string containing the commands
+/// @param timeout msecs reads will wait for keys that have not been created yet
 /// @returns number of commands executed
-int parse_command(pdictionary dict, const char __user *commands, size_t length);
-
-#define test_command(dict, commands) parse_command(dict, commands, strlen(commands))
+int parse_command(pdictionary dict, const char __user *commands, size_t length, uint timeout);
 
 #endif

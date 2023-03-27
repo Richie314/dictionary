@@ -11,9 +11,22 @@ MODULE_AUTHOR("Riccardo Ciucci <riccardo@richie314.it>");
 MODULE_DESCRIPTION("Implementation of static dictionary controlled by a device file");
 MODULE_LICENSE("GPL");
 MODULE_VERSION("1.0");
+
+//Module params
+
+//Prints a lot of unnecessary data if true
 bool debug = false;
+
+//Executes a bunch of tests when the module is loaded
+bool tests = false;
+
+//Max timeout that read/print will wait for keys, if 0 they will wait until killed
+static uint timeout = 0;
+
+//Device filename, when loaded
 #define DEVICE_FILE_NAME "dictionary"
 
+//The dictionary the module operates upon
 static dictionary_wrapper dictionary;
 
 static int misc_device_open(struct inode *inode, struct file *file)
@@ -60,7 +73,7 @@ static ssize_t misc_device_write(struct file *file, const char __user *buffer, s
         printk(KERN_ERR "misc_device_write failed because of NULL input.\n");
         return -EFAULT;
     } 
-    res = parse_command(&dictionary, buffer, count);
+    res = parse_command(&dictionary, buffer, count, timeout);
 
     if (res == 0)
     {
@@ -89,27 +102,38 @@ static struct miscdevice dictionary_device = {
     MISC_DYNAMIC_MINOR, DEVICE_FILE_NAME, &dictionary_fops
 };
 
-#define d_write(key, str, res) \
-    res = dictionary_write(&dictionary, key, strlen(key), str, strlen(str)); \
-    if (res != 0) \
-        printk(KERN_ERR "dictionary_write(\"%s\", \"%s\", %d) failed with code %d\n", key, str, (int)strlen(str), res)
 static int dictionary_module_init(void)
 {
     int res;
 
     res = misc_register(&dictionary_device);
-
     printd("Misc Register returned %d\n", res);
+
     res = dictionary_init(&dictionary);
     if (res != 0)
     {
-        printk(KERN_ALERT "dictionary_init failed!\n");
+        printk(KERN_ALERT "dictionary_init failed! (code: %d)\n", res);
         return 0;
     }
-    
-    d_write("Chiave 4", "Did you ever hear the tragedy of Darth Plagueis The Wise?", res);
-    test_command(&dictionary, "-w <Chiave 2> Ciao ciao");
-    test_command(&dictionary, "-a <Chiave 1>\t mondo");
+
+    printd("Debug activated.\n");
+    if (timeout != 0)
+    {
+        printk(KERN_INFO "Default timeout set to %d msecs.\n", (int)timeout);
+    } else {
+        printk(KERN_INFO "No timeout set. Reads will wait for missing keys indefinitely (or until they are killed).\n");
+    }
+    if (tests)
+    {
+        res = test_dictionary(&dictionary, timeout);
+        if (res == 0)
+        {
+            printk(KERN_INFO "test_dictionary: all tests succeded!\n");
+        } else {
+            printk(KERN_ALERT "test_dictionary: %d tests failed\n", res);
+        }
+    }
+    printk(KERN_INFO "dictionary: write \"-h\" to the device file to see the list of commands.\n");
     return 0;
 }
 
@@ -131,3 +155,5 @@ static void dictionary_module_exit(void)
 module_init(dictionary_module_init);
 module_exit(dictionary_module_exit);
 module_param(debug, bool, 0);
+module_param(tests, bool, 0);
+module_param(timeout, uint, 0);

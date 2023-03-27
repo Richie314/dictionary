@@ -26,7 +26,9 @@ static struct list_head* dictionary_find_node(pdictionary dict,
         }
     }
     *node_obj = NULL;
-    printd("\t\tKey <%s> (%d) missing at the moment.\n", key, (int)key_length);
+#if 0
+    printd("\t\tKey <%s> (%d) missing at the moment.\n\t\t(Maybe it is being created)", key, (int)key_length);
+#endif
     return (struct list_head*)NULL;
 }
 static pnode create_node_and_insert(pdictionary dict, const char* key, size_t key_length)
@@ -72,10 +74,11 @@ static pnode create_node_and_insert(pdictionary dict, const char* key, size_t ke
 }
 static void delete_dict_entry(struct list_head* entry, pnode node_ptr)
 {
-    printd("Deleting item of key \"%s\" and value \"%s\"\n", node_ptr->key, node_ptr->value);
+    printd("Deleting item of key <%s> and value \"%s\"\n", node_ptr->key, node_ptr->value);
     kfree(node_ptr->key);
     kfree(node_ptr->value);
     list_del(entry);
+    kfree(node_ptr);
 }
 
 static int update_node(pnode node, const char __user *str, size_t length)
@@ -85,14 +88,14 @@ static int update_node(pnode node, const char __user *str, size_t length)
     /*
     if (node->value == NULL)
     {
-        nove->value = kmalloc(length, GFP_USER);
+        node->value = kmalloc(length, GFP_USER);
     } else {
         node->value = krealloc(node->value, length, GFP_USER)
     }
     */
     if (node == NULL)
         return 1;
-    //if node->value is NULL krealloc behaves the same as kmalloc(length + 1, GFP_USER)
+    //if node->value is NULL krealloc behaves the same as kmalloc(length + 1, GFP_USER)    
     node->value = (char*)krealloc(node->value, length + 1, GFP_USER);
     if (node->value == NULL)
         return 1;
@@ -123,7 +126,9 @@ static int append_node(pnode node, const char __user *str, size_t length)
     void* new_offSet;
 
     old_strlen = strlen(node->value);
-    printd("Appennd_node on \"%s\": appending \"%s\" (%d) to \"%s\" (%d)\n", node->key, str, (int)length, node->value, (int)old_strlen);
+#if 0
+    printd("appennd_node on \"%s\": adding \"%s\" (%d) to \"%s\" (%d)\n", node->key, str, (int)length, node->value, (int)old_strlen);
+#endif
     node->value = (char*)krealloc(node->value, old_strlen + length + 1, GFP_USER);
     if (node->value == NULL || ksize(node->value) < old_strlen + length + 1)
         return 1;
@@ -173,6 +178,8 @@ static bool dictionary_wait_for_key_callback(pdictionary dict, const char* key, 
 }
 #define dictionary_wait_for_key(dict, key, key_lenght, node_ptr) \
     (wait_event_interruptible(dict->queue, dictionary_wait_for_key_callback(dict, key, key_length, &node_ptr)) == 0)
+#define dictionary_wait_for_key_timeout(dict, key, key_lenght, node_ptr, timeout) \
+    (wait_event_timeout(dict->queue, dictionary_wait_for_key_callback(dict, key, key_length, &node_ptr), HZ * timeout / 1000) > 0)
 #define dictionary_wake_waiting(dict) wake_up_all(&dict->queue)
 /*********************************************/
 /*                                           */
@@ -229,6 +236,7 @@ int dictionary_write(pdictionary dict,
             //Node needs to be created
             node_ptr = create_node_and_insert(dict, key, key_length);
             created_new = node_ptr != NULL;
+            printd("Creting item of key <%s> and value \"%s\".\n", key, str);
         }
         //Values are assigned here
         res = update_node(node_ptr, str, str_len);
@@ -255,6 +263,11 @@ int dictionary_append(pdictionary dict,
 
     if (dict == NULL)
         return 1;
+    if (str_len == 0 || str == NULL)
+    {
+        //Bad call
+        return 1;
+    }
     if (!dictionary_lock(dict))
     {
         return 1;
@@ -262,20 +275,14 @@ int dictionary_append(pdictionary dict,
     ////////////////////////////////////////
     //Mutex is locked from now on
     node_ref = dictionary_find_node(dict, key, key_length, &node_ptr);
-    if (str_len == 0 || str == NULL)
+    if (node_ptr == NULL)
     {
-        //Bad call
-        res = 1;
+        //Node needs to be created
+        node_ptr = create_node_and_insert(dict, key, key_length);
+        res = update_node(node_ptr, str, str_len);
     } else {
-        if (node_ptr == NULL)
-        {
-            //Node needs to be created
-            node_ptr = create_node_and_insert(dict, key, key_length);
-            res = update_node(node_ptr, str, str_len);
-        } else {
-            //Node exists and we append data to it
-            res = append_node(node_ptr, str, str_len);
-        }
+        //Node exists and we append data to it
+        res = append_node(node_ptr, str, str_len);
     }
     //End of the write operations
     ////////////////////////////////////////
@@ -289,13 +296,13 @@ ssize_t dictionary_read(
     pdictionary dict, 
     const char* key, size_t key_length, 
     char __user *buffer, size_t maxsize, 
-    loff_t *ppos)
+    uint timeout, loff_t *ppos)
 {
     pnode node_ptr;
     ssize_t res;
     size_t value_length;
 
-    if (dict == NULL || buffer == NULL || maxsize == 0)
+    if (dict == NULL || buffer == NULL || maxsize == 0 || ppos == NULL)
         return -EINVAL;
     if (!dictionary_lock(dict))
     {
@@ -309,16 +316,39 @@ ssize_t dictionary_read(
             //Key not created, wait here
             printd("Key not found in dictionary at the moment.\nTask will be set to UNINTERRUPIBLE and put in a waitqueue.\n");
             dictionary_unlock(dict);
-            if (!dictionary_wait_for_key(dict, key, key_length, node_ptr))
+            if (timeout != 0)
             {
-                printk(KERN_ALERT "An error happened.\nTask was probably killed\n");
-                return 1;
+                //We will wait with a timeout
+                if (!dictionary_wait_for_key_timeout(dict, key, key_length, node_ptr, timeout))
+                {
+                    printk(KERN_ALERT "Timeout of %d msecs passed without the key being generated.\nTask will be killed\n", (int)timeout);
+                    return (-1);
+                }
+            } else {
+                //We will wait until the task is killed, no time limit
+                if (!dictionary_wait_for_key(dict, key, key_length, node_ptr))
+                {
+                    printk(KERN_ALERT "An error happened.\nTask was probably killed\n");
+                    return (-1);
+                }
             }
             //If we are here it means that we have found the element and also we have control over the mutex
         }
     } while (node_ptr == NULL);
     value_length = strlen(node_ptr->value);
     res = simple_read_from_buffer(buffer, maxsize, ppos, node_ptr->value, value_length);
+    if (res == -EFAULT && tests)
+    {
+        //No byte was read
+        //Retry with memcpy: the output buffer could be kernel space (maybe we are testing)
+        value_length = min(value_length, maxsize);
+        if (memcpy(buffer, node_ptr->value, value_length) == buffer)
+        {
+            //Error has been fixed: the problem was the testing buffer
+            res = (ssize_t)value_length;
+            *ppos += value_length;
+        }
+    }
     //End of the read operations
     ////////////////////////////////////////
     //Unlock the mutex here
@@ -400,8 +430,6 @@ ssize_t dictionary_read_all(pdictionary dict, char __user *buffer, size_t maxsiz
             break;
         }
         index += 2;
-        
-        //printk(KERN_DEBUG "Copied key value <%s> to buffer\n", temp->key);
     }    
     dictionary_unlock(dict);
     (*ppos) += index;
@@ -409,10 +437,10 @@ ssize_t dictionary_read_all(pdictionary dict, char __user *buffer, size_t maxsiz
 }
 
 //Print key function
-int dictionary_print_key(pdictionary dict, const char* key, size_t key_length)
+int dictionary_print_key(pdictionary dict, const char* key, size_t key_length, uint timeout)
 {
     pnode node_ptr;
-    int res;
+    int res = 0;
 
     if (dict == NULL)
         return 1;
@@ -428,10 +456,21 @@ int dictionary_print_key(pdictionary dict, const char* key, size_t key_length)
             //Key not created, wait here
             printd("Key not found in dictionary at the moment.\nTask will be set to UNINTERRUPIBLE and put in a waitqueue.\n");
             dictionary_unlock(dict);
-            if (!dictionary_wait_for_key(dict, key, key_length, node_ptr))
+            if (timeout != 0)
             {
-                printk(KERN_ALERT "An error happened.\nTask was probably killed\n");
-                return 1;//An error happened: can't continue. Mutex should already be unlocked
+                //We will wait with a timeout
+                if (!dictionary_wait_for_key_timeout(dict, key, key_length, node_ptr, timeout))
+                {
+                    printk(KERN_ALERT "Timeout of %d msecs passed without the key being generated.\nTask will be killed\n", (int)timeout);
+                    return 1;
+                }
+            } else {
+                //We will wait until the task is killed, no time limit
+                if (!dictionary_wait_for_key(dict, key, key_length, node_ptr))
+                {
+                    printk(KERN_ALERT "An error happened.\nTask was probably killed\n");
+                    return (-1);//An error happened: can't continue. Mutex should already be unlocked
+                }
             }
             //If we are here it means that we have found the element and also we have control over the mutex
         }
@@ -503,9 +542,8 @@ int dictionary_free(pdictionary dict)
 //Count function
 size_t dictionary_count(pdictionary dict)
 {
-    struct list_head *pos, *q;
-    pnode temp;
-    size_t count;
+    struct list_head *pos;
+    size_t count = 0;
 
     if (dict == NULL)
         return 0;
@@ -514,11 +552,9 @@ size_t dictionary_count(pdictionary dict)
         return 0;
     }
     
-    list_for_each_safe(pos, q, &dict->key_value_list)
+    list_for_each(pos, &dict->key_value_list)
     {
-        temp = list_entry(pos, struct node, list);
-        if (temp != NULL)
-            ++count;
+        ++count;
     }
 
     dictionary_unlock(dict);
@@ -532,7 +568,7 @@ bool dictionary_lock(pdictionary dict)
         //We were interrupted by a signal, continue the iteration
         printd("mutext_lock_interruptible was interrupted by a signal but will continue waiting for the mutex.\n");
     }
-    printd("mutext_lock_interruptible returned 0.\n");
+    //printd("mutext_lock_interruptible returned 0.\n");
     if (dictionary_is_locked(dict))
     {
         //We really aquired the mutex
