@@ -7,6 +7,6 @@ The help command (-h) prints all the commands syntax in a detailed way.
 Read (print) commands that want to read a non existing key are put in a waitqueue until the wanted key is created.
 
 The module has three params
-- debug: if set to true (y) prints extended informations about the functions that are being called
-- tests: if set to true (y) executes a bunch of tests on the start of the module, the dictionary will have content after the tests
-- timeout: if set to non zero (zero is the default value) puts a limit to the amount of time a read/print task can be sleeping waiting for one key. If set to zero tasks will wait until they receive an interrupt signal that kills them or the key is created and the value is printed
+- **debug**: if set to true (y) prints extended informations about the functions that are being called
+- **tests**: if set to true (y) executes a bunch of tests on the start of the module, the dictionary will have content after the tests
+- **timeout**: if set to non zero (zero is the default value) puts a limit to the amount of time a read/print task can be sleeping waiting for one key. If set to zero tasks will wait until they receive an interrupt signal that kills them or the key is created and the value is printed
