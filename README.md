@@ -25,10 +25,10 @@ A complete cheatsheet is printed by the module with the command _`echo -n > dev/
 
 A read operation _`cat dev/dictionary`_ results in an output of the type:
 
-`<Key 1>: "Value 1"\n
+`<Key 1>: "Value 1"\n`
 
-<Key 2>: "Value 2"\n
+`<Key 2>: "Value 2"\n`
 
-...
+`...`
 
-<Key N>: "Value N"\n` 
+`<Key N>: "Value N"\n` 
