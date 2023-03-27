@@ -27,4 +27,4 @@ A read operation _`cat dev/dictionary`_ results in an output of the type:
 `<Key 1>: "Value 1"
 <Key 2>: "Value 2"
 ...
-<Key N>: "Value N"`
+<Key N>: "Value N"` 
