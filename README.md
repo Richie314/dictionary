@@ -23,8 +23,12 @@ An exmple of command to send to the dictionary is: _`echo -n > dev/dictionary "-
 
 A complete cheatsheet is printed by the module with the command _`echo -n > dev/dictionary "-h"`_ 
 
-A read operation _`cat dev/dictionary`_ results in an output of the type: 
-`<Key 1>: "Value 1"
-<Key 2>: "Value 2"
+A read operation _`cat dev/dictionary`_ results in an output of the type:
+
+`<Key 1>: "Value 1"\n
+
+<Key 2>: "Value 2"\n
+
 ...
-<Key N>: "Value N"` 
+
+<Key N>: "Value N"\n` 
