@@ -21,4 +21,10 @@ Just write _`sudo /sbin/insmod modules/dictionary.ko debug=y tests=y timeout=200
 
 An exmple of command to send to the dictionary is: _`echo -n > dev/dictionary "-w <Key> Value"`_. This command tells the module to write _`Value`_ to the key _`Key`_
 
-A complete cheatsheet is printed by the module with the command _`echo -n > dictionary "-h"`_ 
+A complete cheatsheet is printed by the module with the command _`echo -n > dev/dictionary "-h"`_ 
+
+A read operation _`cat dev/dictionary`_ results in an output of the type: 
+`<Key 1>: "Value 1"
+<Key 2>: "Value 2"
+...
+<Key N>: "Value N"`
