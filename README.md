@@ -7,7 +7,7 @@ A read on the device results in a read of all key-value pairs present at that ti
 
 A Through a write operation is possible to send commands to print, delete write to and append to keys.
 
-The _`help command (-h)`_ prints all the commands syntax in a detailed way. 
+The _**help command** `-h`_ prints all the commands syntax in a detailed way. 
 
 Read (print) commands that want to read a non existing key are put in a waitqueue until the wanted key is created.
 
