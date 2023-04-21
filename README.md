@@ -26,9 +26,13 @@ A complete cheatsheet is printed by the module with the command _`echo -n > dev/
 A read operation _`cat dev/dictionary`_ results in an output of the type:
 
 `<Key 1>: "Value 1"\n`
-
 `<Key 2>: "Value 2"\n`
-
 `...`
-
 `<Key N>: "Value N"\n` 
+
+#Build and Install
+Note: do not install this module inside your OS's kernel, use a VM instead.
+You will need the source code of the Linux Kernel
+First start by cloning the repository to get the source code
+
+To be completed
