@@ -35,11 +35,12 @@ A read operation `cat dev/dictionary` results in an output of the type:
 
 # Build and Install
 Note: do not install this module inside your OS's kernel, use a VM instead.
+
 0.  You will need a compiled Linux Kernel, if you don't have one you can download the source code from this <a href="https://www.kernel.org/">url</a> and build it
 1.  First start by cloning the repository to get the source code `git clone https://github.com/Richie314/dictionary.git`
 2.  Make sure you know the path of the created folder (the one that contains the source code of this project) and build with the command `make -C <absolute_path_to_kernel_source> M=<absolute_path_to_dictionary_source_folder> -B`, this should generate a `dictionary_module.ko` file inside your module sorce folder
 3.  Copy the generated file to a directory visible from your VM
-4.  Inside QEMU load the module through the command `sudo /sbin/insmod modules/dictionary_module.ko tests=y timeout=10000`, to see the variuos parameters you can pass to the module see before in this file
+4.  Inside your VM load the module through the command `sudo /sbin/insmod modules/dictionary_module.ko tests=y timeout=10000`, to see the variuos parameters you can pass to the module see before in this file
 5.  Now your VM should have a dev/dictionary file you can write to/read from
 6.  To read the whole content of the dictionary `cat dev/dictionary`
 7.  To write to the dictionary `echo -n > dev/dictionary "-w <KEY_HERE> VALUE_HERE"`
