@@ -1,5 +1,6 @@
 #include "module.h"
 
+//Prototypes used and explicitated later
 
 struct indices_t
 {
@@ -7,6 +8,7 @@ struct indices_t
 };
 static bool parse_key_and_value(const char __user*, size_t, struct indices_t*);
 static bool parse_key(const char __user*, size_t, struct indices_t*);
+
 /**************************************************************************************
  * 
  *                   Functions that will be called by the command parser
@@ -14,7 +16,7 @@ static bool parse_key(const char __user*, size_t, struct indices_t*);
  * 
 ***************************************************************************************/
 
-static int function_write(pdictionary dict, const char* __user keyAndValue, size_t length)
+static int function_write(pdictionary dict, const char* __user keyAndValue, size_t length, uint)
 {
     struct indices_t indices;
 
@@ -32,7 +34,7 @@ static int function_write(pdictionary dict, const char* __user keyAndValue, size
         &keyAndValue[indices.key_start], indices.key_length, 
         &keyAndValue[indices.value_start], indices.value_length);
 }
-static int function_append(pdictionary dict, const char __user* keyAndValue, size_t length)
+static int function_append(pdictionary dict, const char __user* keyAndValue, size_t length, uint)
 {
     struct indices_t indices;
 
@@ -50,7 +52,7 @@ static int function_append(pdictionary dict, const char __user* keyAndValue, siz
         &keyAndValue[indices.key_start], indices.key_length, 
         &keyAndValue[indices.value_start], indices.value_length);
 }
-static int function_print(pdictionary dict, const char __user* keyAndValue, size_t length)
+static int function_print(pdictionary dict, const char __user* keyAndValue, size_t length, uint timeout)
 {
     struct indices_t indices;
 
@@ -58,9 +60,9 @@ static int function_print(pdictionary dict, const char __user* keyAndValue, size
     {
         return (-1);//Bad format
     }
-    return dictionary_print_key(dict, &keyAndValue[indices.key_start], indices.key_length);
+    return dictionary_print_key(dict, &keyAndValue[indices.key_start], indices.key_length, timeout);
 }
-static int function_delete(pdictionary dict, const char __user *keyAndValue, size_t length)
+static int function_delete(pdictionary dict, const char __user *keyAndValue, size_t length, uint)
 {
     struct indices_t indices;
 
@@ -70,7 +72,7 @@ static int function_delete(pdictionary dict, const char __user *keyAndValue, siz
     }
     return dictionary_delete_key(dict, &keyAndValue[indices.key_start], indices.key_length);
 }
-static int function_delete_all(pdictionary dict, const char*, size_t)
+static int function_delete_all(pdictionary dict, const char*, size_t, uint)
 {
     int res;
 
@@ -78,7 +80,7 @@ static int function_delete_all(pdictionary dict, const char*, size_t)
     res = dictionary_free(dict);
     return res;
 }
-static int function_count(pdictionary dict, const char __user*, size_t)
+static int function_count(pdictionary dict, const char __user*, size_t, uint)
 {
     int count;
 
@@ -88,19 +90,17 @@ static int function_count(pdictionary dict, const char __user*, size_t)
         return 1;
     return 0;
 }
-static int function_is_empty(pdictionary dict, const char __user*, size_t)
+static int function_is_empty(pdictionary dict, const char __user*, size_t, uint)
 {
     if (dictionary_empty(dict))
     {
         printk(KERN_INFO "Dictionary is empty.\n");
-        printk(KERN_DEBUG "Dictionary is empty.\n");
     } else {
         printk(KERN_INFO "Dictionary is not empty.\n");
-        printk(KERN_DEBUG "Dictionary is not empty.\n");
     }
     return 0;
 }
-static int function_lock(pdictionary dict, const char __user*, size_t)
+static int function_lock(pdictionary dict, const char __user*, size_t, uint)
 {
     if (dictionary_is_locked(dict))
     {
@@ -114,7 +114,7 @@ static int function_lock(pdictionary dict, const char __user*, size_t)
     printk(KERN_ERR "Dictionary couldn't be locked!\n");
     return 1;
 }
-static int function_unlock(pdictionary dict, const char __user*, size_t)
+static int function_unlock(pdictionary dict, const char __user*, size_t, uint)
 {
     if (dictionary_is_locked(dict))
     {
@@ -125,7 +125,7 @@ static int function_unlock(pdictionary dict, const char __user*, size_t)
     }
     return 0;
 }
-static int function_is_locked(pdictionary dict, const char __user*, size_t)
+static int function_is_locked(pdictionary dict, const char __user*, size_t, uint)
 {
     if (dictionary_is_locked(dict))
     {
@@ -142,10 +142,9 @@ static int function_is_locked(pdictionary dict, const char __user*, size_t)
  * 
 ***************************************************************************************/
 
-
 //Basic object declarations
 
-typedef int(*command_function)(pdictionary, const char __user *, size_t);
+typedef int(*command_function)(pdictionary, const char __user *, size_t, uint);
 #define skip_spaces(command, i, length) \
     while (i < length && (command[i] == ' ' || command[i] == '\t') && command[i] != '\0') \
     { \
@@ -239,7 +238,10 @@ static void print_commands_format(void)
         "     interpreted since the first non space character after >\n"     
         "   # Wrtinig an empty string to a key deletes it\n"                 
         "   # Creating a new key wakes all the tasks that are waiting\n"     
-        "     for a non-existing key\n"                                      
+        "     for a non-existing key\n", 
+        COMMAND_SEPARATOR, 
+        COMMAND_WRITE);
+    printk(                                   
         "# Append to key \"-%c <KEY_HERE> VALUE_HERE\"\n"                    
         "   # If the key is not present it is created but does not wake\n"   
         "     tasks in the waitqueue\n"                                      
@@ -248,11 +250,20 @@ static void print_commands_format(void)
         "# Delete key \"-%c KEY_HERE\"\n"                                    
         "   # The key is interpreted since the first non space character\n" 
         "# Delete all keys \"-%c\"\n"                                        
-        "   # No parameters to this command\n"                               
+        "   # No parameters to this command\n", 
+        COMMAND_APPEND, 
+        COMMAND_DELETE, 
+        COMMAND_DELETE_ALL);
+    printk(                                                               
         "# Print key \"-%c KEY_HERE\" or \"-%c KEY_HERE\"\n"                 
         "   # Prints the key, if present. If not waits until its created\n"  
         "# Count keys \"-%c\"\n"                                             
-        "# Is empty? \"-%c\"\n"                                              
+        "# Is empty? \"-%c\"\n", 
+        COMMAND_PRINT, 
+        COMMAND_READ, 
+        COMMAND_COUNT, 
+        COMMAND_EMPTY);
+    printk(                                                                  
         "# Lock \"-%c\"\n"                                                   
         "   # Locks the dictionary, no call will be able to\n"               
         "     read/write on it until Unlock is called\n"                     
@@ -260,27 +271,17 @@ static void print_commands_format(void)
         "# Is locked? \"-%c\"\n"                                             
         "# Print commands format \"-%c\"\n"                                  
         "*****************************************************************\n", 
-        COMMAND_SEPARATOR, 
-        COMMAND_WRITE, 
-        COMMAND_APPEND, 
-        COMMAND_DELETE, 
-        COMMAND_DELETE_ALL, 
-        COMMAND_PRINT, 
-        COMMAND_READ, 
-        COMMAND_COUNT, 
-        COMMAND_EMPTY,
         COMMAND_LOCK, 
         COMMAND_UNLOCK, 
         COMMAND_IS_LOCKED, 
         COMMAND_INFO);
 }
 
-static bool execute_single_command(pdictionary dict, const char __user *command, size_t length)
+static bool execute_single_command(pdictionary dict, const char __user *command, size_t length, uint timeout)
 {
     size_t i = 0;
     bool need_for_parameters = false;
     command_function f = NULL;
-
 
     skip_spaces(command, i, length) false;
     //Skipped start spaces
@@ -343,7 +344,7 @@ static bool execute_single_command(pdictionary dict, const char __user *command,
         ++i;
         skip_spaces(command, i, length) false;
     }
-    if (f(dict, &command[i], length - i) != 0)
+    if (f(dict, &command[i], length - i, timeout) != 0)
     {
         printk(KERN_ERR "Command reported error while executing.\n");
         return false;
@@ -352,7 +353,7 @@ static bool execute_single_command(pdictionary dict, const char __user *command,
 }
 
 
-int parse_command(pdictionary dict, const char __user *commands, size_t length)
+int parse_command(pdictionary dict, const char __user *commands, size_t length, uint timeout)
 {
     ssize_t command_start = 0, command_end = 0;
     int count = 0;
@@ -367,13 +368,13 @@ int parse_command(pdictionary dict, const char __user *commands, size_t length)
         {
             //Last command
             printd("Last command: \"%s\" (%d)\n", &commands[command_start], (int)(length - command_start));
-            if (execute_single_command(dict, &commands[command_start], length - command_start))
+            if (execute_single_command(dict, &commands[command_start], length - command_start, timeout))
                 ++count;
             return count;
         } else {
             printd("Command: \"%s\" (%d)\n of many", &commands[command_start], (int)(command_end - command_start));
             //There are other commands next
-            if (execute_single_command(dict, &commands[command_start], command_end - command_start))
+            if (execute_single_command(dict, &commands[command_start], command_end - command_start, timeout))
                 ++count;
             command_start = command_end + 1;//+1 to skip the COMMAND_SEPARATOR character
         }

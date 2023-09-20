@@ -1,5 +1,6 @@
 #ifndef _MODULE_DICTIONARY_H
 #define _MODULE_DICTIONARY_H
+
 #include <linux/mutex.h>
 #include <linux/list.h>
 #include <linux/wait.h>
@@ -54,11 +55,12 @@ int dictionary_append(pdictionary dict,
 /// @param key_length the length of the key
 /// @param buffer the buffer where the stored data will be copied
 /// @param maxsize the max length of the buffer that we can receive
+/// @param timeout max amount of msecs to wait for the creation. If 0, the task will wait until it's killed
 /// @param ppos passed from the Misc device file read method
 /// @return number of bytes read, below zero for errors
 ssize_t dictionary_read(pdictionary dict, 
     const char *key, size_t key_length, 
-    char __user* buffer, size_t maxsize, loff_t *ppos);
+    char __user* buffer, size_t maxsize, uint timeout, loff_t *ppos);
 
 /// @brief Reads all the key-value pairs
 /// @param dict The dictionary we want to read
@@ -72,8 +74,9 @@ ssize_t dictionary_read_all(pdictionary dict, char __user *buffer, size_t maxsiz
 /// @param dict pointer to the dictionary_base object
 /// @param key assumed not NULL, the key we want to write to
 /// @param key_length the length of the key
+/// @param timeout max amount of msecs to wait for the creation. If 0, the task will wait until it's killed
 /// @return zero for success, non zero otherwise
-int dictionary_print_key(pdictionary dict, const char* key, size_t key_length);
+int dictionary_print_key(pdictionary dict, const char* key, size_t key_length, uint timeout);
 
 /// @brief Reads all the key-value pairs
 /// @param dict The dictionary we want to read
@@ -107,6 +110,6 @@ bool dictionary_lock(pdictionary dict);
 
 /// @brief Unlocks dictionary's mutex
 /// @param dict pointer to dictionary object
-#define dictionary_unlock(dict) mutex_unlock(&dict->mutex); printd("Dictionary unlocked.\n")
+#define dictionary_unlock(dict) do { mutex_unlock(&dict->mutex); printd("\tDictionary unlocked.\n"); } while (0)
 
 #endif
