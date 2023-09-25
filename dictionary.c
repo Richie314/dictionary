@@ -170,7 +170,7 @@ static bool dictionary_wait_for_key_callback(pdictionary dict, const char* key, 
         }
         // else {
             //The node we were waiting for has just been created.
-            //To avoid race-collisions the dictionary is not unlocked, since the node has just been loaded too.
+            //To avoid race-conditions the dictionary is not unlocked, since the node has just been loaded too.
             //The Task that is waiting will later free the mutex when has finished operations
         //}
     }
@@ -306,7 +306,7 @@ ssize_t dictionary_read(
         return -EINVAL;
     if (!dictionary_lock(dict))
     {
-        return -EFAULT;
+        return -EAGAIN;
     }
     ////////////////////////////////////////
     //Mutex is locked from now on
@@ -322,14 +322,14 @@ ssize_t dictionary_read(
                 if (!dictionary_wait_for_key_timeout(dict, key, key_length, node_ptr, timeout))
                 {
                     printk(KERN_ALERT "Timeout of %d msecs passed without the key being generated.\nTask will be killed\n", (int)timeout);
-                    return (-1);
+                    return -EAGAIN;
                 }
             } else {
                 //We will wait until the task is killed, no time limit
                 if (!dictionary_wait_for_key(dict, key, key_length, node_ptr))
                 {
                     printk(KERN_ALERT "An error happened.\nTask was probably killed\n");
-                    return (-1);
+                    return -EAGAIN;
                 }
             }
             //If we are here it means that we have found the element and also we have control over the mutex
@@ -380,7 +380,7 @@ ssize_t dictionary_read_all(pdictionary dict, char __user *buffer, size_t maxsiz
     if (!dictionary_lock(dict))
     {
         printk(KERN_ERR "dictionary_read_all: Couldn't unlock the mutex!\n");
-        return -EFAULT;
+        return -EAGAIN;
     }
     list_for_each_safe(pos, q, &dict->key_value_list)
     {
@@ -443,10 +443,10 @@ int dictionary_print_key(pdictionary dict, const char* key, size_t key_length, u
     int res = 0;
 
     if (dict == NULL)
-        return 1;
+        return -EINVAL;
     if (!dictionary_lock(dict))
     {
-        return 1;
+        return -EAGAIN;
     }
     ////////////////////////////////////////
     //Mutex is locked from now on
@@ -462,14 +462,14 @@ int dictionary_print_key(pdictionary dict, const char* key, size_t key_length, u
                 if (!dictionary_wait_for_key_timeout(dict, key, key_length, node_ptr, timeout))
                 {
                     printk(KERN_ALERT "Timeout of %d msecs passed without the key being generated.\nTask will be killed\n", (int)timeout);
-                    return 1;
+                    return -EAGAIN;
                 }
             } else {
                 //We will wait until the task is killed, no time limit
                 if (!dictionary_wait_for_key(dict, key, key_length, node_ptr))
                 {
                     printk(KERN_ALERT "An error happened.\nTask was probably killed\n");
-                    return (-1);//An error happened: can't continue. Mutex should already be unlocked
+                    return -EAGAIN; //An error happened: can't continue. Mutex should already be unlocked
                 }
             }
             //If we are here it means that we have found the element and also we have control over the mutex
@@ -493,12 +493,12 @@ int dictionary_print_all(pdictionary dict)
     if (dict == NULL)
     {
         printk(KERN_ERR "dictionary_print_all: dictionary was NULL!\n");
-        return 1;
+        return -EINVAL;
     }
     if (!dictionary_lock(dict))
     {
         printk(KERN_ERR "dictionary_print_all: Couldn't unlock the mutex!\n");
-        return 1;
+        return -EAGAIN;
     }
     
     list_for_each_safe(pos, q, &dict->key_value_list)
@@ -522,10 +522,10 @@ int dictionary_free(pdictionary dict)
     pnode temp;
 
     if (dict == NULL)
-        return 1;
+        return -EINVAL;
     if (!dictionary_lock(dict))
     {
-        return 1;
+        return -EAGAIN;
     }
     
     list_for_each_safe(pos, q, &dict->key_value_list)

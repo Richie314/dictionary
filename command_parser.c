@@ -58,7 +58,7 @@ static int function_print(pdictionary dict, const char __user* keyAndValue, size
 
     if (!parse_key(keyAndValue, length, &indices))
     {
-        return (-1);//Bad format
+        return -EINVAL;//Bad format
     }
     return dictionary_print_key(dict, &keyAndValue[indices.key_start], indices.key_length, timeout);
 }
@@ -282,6 +282,7 @@ static bool execute_single_command(pdictionary dict, const char __user *command,
     size_t i = 0;
     bool need_for_parameters = false;
     command_function f = NULL;
+    int function_output = 0;
 
     skip_spaces(command, i, length) false;
     //Skipped start spaces
@@ -344,9 +345,23 @@ static bool execute_single_command(pdictionary dict, const char __user *command,
         ++i;
         skip_spaces(command, i, length) false;
     }
-    if (f(dict, &command[i], length - i, timeout) != 0)
+    function_output = f(dict, &command[i], length - i, timeout);
+    if (function_output != 0)
     {
-        printk(KERN_ERR "Command reported error while executing.\n");
+        printk(KERN_ERR "Command reported error %d while executing\n", function_output);
+        switch (function_output)
+        {
+            case -EFAULT:
+                printk(KERN_ERR "Detected error: EFAULT.\n");
+                break;
+            case -EINVAL:
+                printk(KERN_ERR "Detected error: EINVAL.\n");
+                break;
+            case -EAGAIN:
+                printk(KERN_ERR "Detected error: EAGAIN.\n");
+                break;
+        }
+        
         return false;
     }
     return true;
@@ -359,7 +374,7 @@ int parse_command(pdictionary dict, const char __user *commands, size_t length, 
     int count = 0;
 
     if (commands == NULL || length == 0)
-        return (-1);
+        return -EINVAL;
     printd("parse command of \"%s\" (%d)", commands, (int)length);
     do
     {

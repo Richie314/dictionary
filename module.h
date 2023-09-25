@@ -6,7 +6,7 @@
 extern bool debug;
 extern bool tests;
 
-#define printd(fmt, ...) if (debug) { printk(KERN_INFO fmt, ## __VA_ARGS__); }
+#define printd(fmt, ...) if (debug) { printk(KERN_INFO "\t" fmt, ## __VA_ARGS__); }
 
 /// @brief Executes a series of tests
 /// @param dict The dictionary to test

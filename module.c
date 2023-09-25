@@ -71,13 +71,12 @@ static ssize_t misc_device_write(struct file *file, const char __user *buffer, s
     if (buffer == NULL || count == 0)
     {
         printk(KERN_ERR "misc_device_write failed because of NULL input.\n");
-        return -EFAULT;
+        return -EINVAL;
     } 
     res = parse_command(&dictionary, buffer, count, timeout);
 
     if (res == 0)
     {
-        printk(KERN_ALERT "No command executed.\n");
         return -EFAULT;
     }
     if (res < 0)
