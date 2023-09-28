@@ -23,11 +23,13 @@
 #define COMMAND_IS_LOCKED 'i'
 
 /// @brief Parses a list of commands and executes them
-/// @param dict pointer to the dictionary object 
-/// @param commands the string containing the commands
-/// @param length length of the string containing the commands
+/// @param dict Pointer to the dictionary object 
+/// @param commands The string containing the commands
+/// @param length Length of the string containing the commands
 /// @param timeout msecs reads will wait for keys that have not been created yet
-/// @returns number of commands executed
-int parse_command(pdictionary dict, const char __user *commands, size_t length, uint timeout);
+/// @param allow_multiple_commands Allow or not multiple commands to be executed
+/// @returns number of commands executed if allow_multple_commands is true, 
+/// below zero for errors zero for success of the first and only command where allow_multiple_commands is false
+int parse_command(pdictionary dict, const char __user *commands, size_t length, uint timeout, bool allow_multiple_commands);
 
 #endif

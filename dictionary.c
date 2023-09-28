@@ -302,14 +302,19 @@ ssize_t dictionary_read(
     ssize_t res;
     size_t value_length;
 
+    // Check for invalid parameters
     if (dict == NULL || buffer == NULL || maxsize == 0 || ppos == NULL)
         return -EINVAL;
+
+    // Try to acquire the mutex: if a signal interrupts exit
     if (!dictionary_lock(dict))
     {
         return -EAGAIN;
     }
-    ////////////////////////////////////////
-    //Mutex is locked from now on
+
+    //
+    // Mutex is locked from now on
+    //
     do {
         if (dictionary_find_node(dict, key, key_length, &node_ptr) == NULL)
         {
@@ -335,12 +340,16 @@ ssize_t dictionary_read(
             //If we are here it means that we have found the element and also we have control over the mutex
         }
     } while (node_ptr == NULL);
+
+    // We know where to read
     value_length = strlen(node_ptr->value);
     res = simple_read_from_buffer(buffer, maxsize, ppos, node_ptr->value, value_length);
+
+    // The read failed but it could be caused by output buffer not in user's space
     if (res == -EFAULT && tests)
     {
-        //No byte was read
-        //Retry with memcpy: the output buffer could be kernel space (maybe we are testing)
+        // No byte was read
+        // Retry with memcpy: the output buffer could be kernel space (maybe we are testing)
         value_length = min(value_length, maxsize);
         if (memcpy(buffer, node_ptr->value, value_length) == buffer)
         {
@@ -349,9 +358,10 @@ ssize_t dictionary_read(
             *ppos += value_length;
         }
     }
-    //End of the read operations
-    ////////////////////////////////////////
-    //Unlock the mutex here
+    
+    //
+    // End of the read operations: Unlock the mutex here
+    //
     dictionary_unlock(dict);
     return res;
 }
@@ -539,7 +549,7 @@ int dictionary_free(pdictionary dict)
     return 0;
 }
 
-//Count function
+// Count function
 size_t dictionary_count(pdictionary dict)
 {
     struct list_head *pos;
@@ -563,19 +573,12 @@ size_t dictionary_count(pdictionary dict)
 
 bool dictionary_lock(pdictionary dict)
 {
-    while (mutex_lock_interruptible(&dict->mutex) != 0)
+    if (mutex_lock_interruptible(&dict->mutex) != 0)
     {
         //We were interrupted by a signal, continue the iteration
-        printd("mutext_lock_interruptible was interrupted by a signal but will continue waiting for the mutex.\n");
+        printd("mutext_lock_interruptible was interrupted by a signal and will no longer continue waiting for the mutex.\n");
+        return false;
     }
-    //printd("mutext_lock_interruptible returned 0.\n");
-    if (dictionary_is_locked(dict))
-    {
-        //We really aquired the mutex
-        printd("\tDictionary locked.\n");
-        return true;
-    }
-    //If this happens it means there's a bug in Linux's mutex API
-    printd("mutext_lock_interruptible failed.\n");
-    return false;
+    printd("\tDictionary locked.\n");
+    return true;
 }

@@ -14,13 +14,16 @@ MODULE_VERSION("1.0");
 
 //Module params
 
-//Prints a lot of unnecessary data if true
+// Prints a lot of unnecessary data if true
 bool debug = false;
 
-//Executes a bunch of tests when the module is loaded
+// Executes a bunch of tests when the module is loaded
 bool tests = false;
 
-//Max timeout that read/print will wait for keys, if 0 they will wait until killed
+// Allow or not multiple read/writes on the dictionary
+static bool multi_command = true;
+
+// Max timeout that read/print will wait for keys, if 0 they will wait until killed
 static uint timeout = 0;
 
 //Device filename, when loaded
@@ -73,16 +76,23 @@ static ssize_t misc_device_write(struct file *file, const char __user *buffer, s
         printk(KERN_ERR "misc_device_write failed because of NULL input.\n");
         return -EINVAL;
     } 
-    res = parse_command(&dictionary, buffer, count, timeout);
+    res = parse_command(&dictionary, buffer, count, timeout, multi_command);
 
     if (res == 0)
     {
+        if (multi_command)
+        {
+            printk(KERN_ERR "All commands failed!\n");
+            return -EFAULT;
+        }
+        
+        /////////////////////////
         return -EFAULT;
     }
     if (res < 0)
     {
         printk(KERN_ERR "Internal error of code %d.\n", res);
-        return -EFAULT;
+        return res;
     }
     printk(KERN_DEBUG "Executed %d commands.\n", res);
     return count;
@@ -156,3 +166,4 @@ module_exit(dictionary_module_exit);
 module_param(debug, bool, 0);
 module_param(tests, bool, 0);
 module_param(timeout, uint, 0);
+module_param(multi_command, bool, 0);

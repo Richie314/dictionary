@@ -277,7 +277,7 @@ static void print_commands_format(void)
         COMMAND_INFO);
 }
 
-static bool execute_single_command(pdictionary dict, const char __user *command, size_t length, uint timeout)
+static bool execute_single_command(pdictionary dict, const char __user *command, size_t length, uint timeout, int* command_out)
 {
     size_t i = 0;
     bool need_for_parameters = false;
@@ -346,6 +346,13 @@ static bool execute_single_command(pdictionary dict, const char __user *command,
         skip_spaces(command, i, length) false;
     }
     function_output = f(dict, &command[i], length - i, timeout);
+    
+    // Keep the output of the function if requested
+    if (command_out)
+    {
+        *command_out = function_output;
+    }
+
     if (function_output != 0)
     {
         printk(KERN_ERR "Command reported error %d while executing\n", function_output);
@@ -367,15 +374,41 @@ static bool execute_single_command(pdictionary dict, const char __user *command,
     return true;
 }
 
-
-int parse_command(pdictionary dict, const char __user *commands, size_t length, uint timeout)
+int parse_command(pdictionary dict, const char __user *commands, size_t length, uint timeout, bool allow_multi)
 {
     ssize_t command_start = 0, command_end = 0;
-    int count = 0;
+    int command_out = 0, command_count = 0;
 
     if (commands == NULL || length == 0)
         return -EINVAL;
     printd("parse command of \"%s\" (%d)", commands, (int)length);
+
+    //
+    //  Only one command allowed: we return the operation return value
+    //
+    if (!allow_multi)
+    {
+        command_end = next_command_start(commands, length, command_start);
+        if (command_end < 0)
+        {
+            //Last command
+            printd("Only command: \"%s\" (%d)\n", &commands[command_start], (int)(length - command_start));
+            
+            command_end = length;
+        }
+
+        if (command_end < length)
+        {
+            printd("%d characters after the command will be ignored.\n", (int)(length - command_end));
+        }
+
+        execute_single_command(dict, &commands[command_start], length - command_start, timeout, &command_out);
+        return command_out; // Return
+    }
+    
+    //
+    //  Multiple commands allowed: we return the number of commands executed
+    //
     do
     {
         command_end = next_command_start(commands, length, command_start);
@@ -383,18 +416,28 @@ int parse_command(pdictionary dict, const char __user *commands, size_t length, 
         {
             //Last command
             printd("Last command: \"%s\" (%d)\n", &commands[command_start], (int)(length - command_start));
-            if (execute_single_command(dict, &commands[command_start], length - command_start, timeout))
-                ++count;
-            return count;
+            if (execute_single_command(dict, &commands[command_start], length - command_start, timeout, &command_out))
+            {
+                // Command succeded: update the count
+                ++command_count;
+            } else {
+                // Command failed: exit the loop
+                break;
+            }
         } else {
             printd("Command: \"%s\" (%d)\n of many", &commands[command_start], (int)(command_end - command_start));
             //There are other commands next
-            if (execute_single_command(dict, &commands[command_start], command_end - command_start, timeout))
-                ++count;
-            command_start = command_end + 1;//+1 to skip the COMMAND_SEPARATOR character
+            if (execute_single_command(dict, &commands[command_start], command_end - command_start, timeout, &command_out))
+            {
+                // Command succeded: update the count
+                ++command_count;
+            } else {
+                // Command failed: exit the loop
+                break;
+            }
         }
-
+        command_start = command_end + 1;//+1 to skip the COMMAND_SEPARATOR character
     }
-    while(command_end < length);
-    return count;
+    while (command_end < length);
+    return command_count;
 }
