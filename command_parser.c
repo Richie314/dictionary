@@ -402,7 +402,7 @@ int parse_command(pdictionary dict, const char __user *commands, size_t length, 
             printd("%d characters after the command will be ignored.\n", (int)(length - command_end));
         }
 
-        execute_single_command(dict, &commands[command_start], length - command_start, timeout, &command_out);
+        execute_single_command(dict, &commands[command_start], command_end - command_start, timeout, &command_out);
         return command_out; // Return
     }
     

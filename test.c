@@ -98,5 +98,12 @@ int test_dictionary(pdictionary dict, uint timeout)
         "Tests: executing test on dictionary_count method.\n");
     test_count(dict, 4, res, count);
 
+    //Test dictionary_count
+    printk(KERN_INFO 
+        "-------------------------------------------------\n"
+        "Tests: executing test on parse_command function.\n");
+    parse_command(dict, "-w <Hello1> World1|-w <Hello2> World2", 39, 0, true);
+    parse_command(dict, "-w <Hello3> World3|-w <Hello4> World4", 39, 0, false);
+
     return count;
 }
