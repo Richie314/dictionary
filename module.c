@@ -111,7 +111,7 @@ static struct miscdevice dictionary_device = {
     MISC_DYNAMIC_MINOR, DEVICE_FILE_NAME, &dictionary_fops
 };
 
-static int dictionary_module_init(void)
+static __init int dictionary_module_init(void)
 {
     int res;
 
@@ -146,7 +146,7 @@ static int dictionary_module_init(void)
     return 0;
 }
 
-static void dictionary_module_exit(void)
+static __exit void dictionary_module_exit(void)
 {
     int res;
 
